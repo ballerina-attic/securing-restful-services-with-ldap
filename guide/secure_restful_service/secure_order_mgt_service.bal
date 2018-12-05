@@ -16,11 +16,12 @@
 
 import ballerina/auth;
 import ballerina/http;
+import ballerina/log;
 //import ballerinax/docker;
 //import ballerinax/kubernetes;
 
-@final string regexInt = "\\d+";
-@final string regexJson = "[a-zA-Z0-9.,{}:\" ]*";
+final string regexInt = "\\d+";
+final string regexJson = "[a-zA-Z0-9.,{}:\" ]*";
 
 // Configuration options to integrate Ballerina service
 // with an LDAP server
@@ -28,7 +29,7 @@ auth:LdapAuthProviderConfig ldapAuthProviderConfig = {
     // Unique name to identify the user store
     domainName: "ballerina.io",
     // Connection URL to the LDAP server
-    connectionURL: "ldap://172.17.0.2:9389",
+    connectionURL: "ldap://localhost:9389",
     // The username used to connect to the LDAP server
     connectionName: "uid=admin,ou=system",
     // Password for the ConnectionName user
@@ -100,8 +101,7 @@ http:AuthProvider basicAuthProvider = {
 //    tag:"v1.0"
 //}
 //@docker:Expose{}
-endpoint http:Listener listener {
-    port: 9090,
+listener http:Listener httpListener = new(9090, config = {
     secureSocket: {
         keyStore: {
             path: "${ballerina.home}/bre/security/ballerinaKeystore.p12",
@@ -113,23 +113,23 @@ endpoint http:Listener listener {
         }
     },
     authProviders: [basicAuthProvider]
-};
+});
 
 // Order management is done using an in memory map.
 // Add some sample orders to 'orderMap' at startup.
-map<json> ordersMap;
+map<json> ordersMap = {};
 
-@Description { value: "RESTful service." }
+// RESTful service.
 @http:ServiceConfig {
     basePath: "/ordermgt",
     authConfig: {
         authentication: { enabled: true }
     }
 }
-service<http:Service> order_mgt bind listener {
+service order_mgt on httpListener {
 
-    @Description { value: "Resource that handles the HTTP POST requests that are directed
-     to the path '/order' to create a new Order." }
+    // Resource that handles the HTTP POST requests that are directed
+    // to the path '/order' to create a new Order.
     @http:ResourceConfig {
         methods: ["POST"],
         path: "/order",
@@ -137,32 +137,42 @@ service<http:Service> order_mgt bind listener {
             scopes: ["add_order"]
         }
     }
-    addOrder(endpoint client, http:Request req) {
-        json orderReq = check req.getJsonPayload();
-        string orderId = orderReq.Order.ID.toString();
+    resource function addOrder(http:Caller caller, http:Request req) {
+        var orderReq = req.getJsonPayload();
+        if (orderReq is json) {
+            string orderId = orderReq.Order.ID.toString();
 
-        // Get untainted value if `orderId` is a valid input
-        orderId = getUntaintedStringIfValid(orderId);
+            // Get untainted value if `orderId` is a valid input
+            orderId = getUntaintedStringIfValid(orderId);
 
-        ordersMap[orderId] = orderReq;
+            ordersMap[orderId] = orderReq;
 
-        // Create response message.
-        json payload = { status: "Order Created.", orderId: orderId };
-        http:Response response;
-        response.setPayload(payload);
+            // Create response message.
+            json payload = { status: "Order Created.", orderId: orderId };
+            http:Response response = new;
+            response.setPayload(untaint payload);
 
-        // Set 201 Created status code in the response message.
-        response.statusCode = http:CREATED_201;
-        // Set 'Location' header in the response message.
-        // This can be used by the client to locate the newly added order.
-        response.setHeader("Location", "http://localhost:9090/ordermgt/order/" + orderId);
+            // Set 201 Created status code in the response message.
+            response.statusCode = http:CREATED_201;
+            // Set 'Location' header in the response message.
+            // This can be used by the client to locate the newly added order.
+            response.setHeader("Location", "http://localhost:9090/ordermgt/order/" + orderId);
 
-        // Send response to the client.
-        _ = client->respond(response);
+            // Send response to the caller.
+            var responseToCaller = caller->respond(response);
+            if (responseToCaller is error) {
+                log:printError("Error sending response", err = responseToCaller);
+            }
+        } else if (orderReq is error) {
+            var responseToCaller = caller->respond("Error in extracting json payload from request");
+            if (responseToCaller is error) {
+                log:printError("Error sending response", err = responseToCaller);
+            }
+        }
     }
 
-    @Description { value: "Resource that handles the HTTP PUT requests that are directed
-    to the path '/orders' to update an existing Order." }
+    // Resource that handles the HTTP PUT requests that are directed
+    // to the path '/orders' to update an existing Order.
     @http:ResourceConfig {
         methods: ["PUT"],
         path: "/order/{orderId}",
@@ -170,38 +180,48 @@ service<http:Service> order_mgt bind listener {
             scopes: ["update_order"]
         }
     }
-    updateOrder(endpoint client, http:Request req, string orderId) {
-        json updatedOrder = check req.getJsonPayload();
+    resource function updateOrder(http:Caller caller, http:Request req, string orderId) {
+        var updatedOrder = req.getJsonPayload();
 
-        // Get untainted value if `orderId` is a valid input
-        orderId = getUntaintedStringIfValid(orderId);
+        if (updatedOrder is json) {
+            // Get untainted value if `orderId` is a valid input
+            string validOrderId = getUntaintedStringIfValid(orderId);
 
-        // Find the order that needs to be updated and retrieve it in JSON format.
-        json existingOrder = ordersMap[orderId];
+            // Find the order that needs to be updated and retrieve it in JSON format.
+            json existingOrder = ordersMap[validOrderId];
 
-        // Get untainted json value if it is a valid json
-        existingOrder = getUntaintedJsonIfValid(existingOrder);
-        updatedOrder = getUntaintedJsonIfValid(updatedOrder);
+            // Get untainted json value if it is a valid json
+            existingOrder = getUntaintedJsonIfValid(existingOrder);
+            updatedOrder = getUntaintedJsonIfValid(updatedOrder);
 
-        // Updating existing order with the attributes of the updated order.
-        if (existingOrder != null) {
+            // Updating existing order with the attributes of the updated order.
+            if (existingOrder != null) {
 
-            existingOrder.Order.Name = updatedOrder.Order.Name;
-            existingOrder.Order.Description = updatedOrder.Order.Description;
-            ordersMap[orderId] = existingOrder;
-        } else {
-            existingOrder = "Order : " + orderId + " cannot be found.";
+                existingOrder.Order.Name = updatedOrder.Order.Name;
+                existingOrder.Order.Description = updatedOrder.Order.Description;
+                ordersMap[validOrderId] = existingOrder;
+            } else {
+                existingOrder = "Order : " + validOrderId + " cannot be found.";
+            }
+
+            http:Response response = new;
+            // Set the JSON payload to the outgoing response message to the client.
+            response.setPayload(existingOrder);
+            // Send response to the caller.
+            var responseToCaller = caller->respond(response);
+            if (responseToCaller is error) {
+                log:printError("Error sending response", err = responseToCaller);
+            }
+        } else if (updatedOrder is error) {
+            var responseToCaller = caller->respond("Error in extracting json payload from request");
+            if (responseToCaller is error) {
+                log:printError("Error sending response", err = responseToCaller);
+            }
         }
-
-        http:Response response;
-        // Set the JSON payload to the outgoing response message to the client.
-        response.setPayload(existingOrder);
-        // Send response to the client.
-        _ = client->respond(response);
     }
 
-    @Description { value: "Resource that handles the HTTP DELETE requests, which are
-    directed to the path '/orders/<orderId>' to delete an existing Order." }
+    // Resource that handles the HTTP DELETE requests, which are
+    // directed to the path '/orders/<orderId>' to delete an existing Order.
     @http:ResourceConfig {
         methods: ["DELETE"],
         path: "/order/{orderId}",
@@ -209,24 +229,32 @@ service<http:Service> order_mgt bind listener {
             scopes: ["cancel_order"]
         }
     }
-    cancelOrder(endpoint client, http:Request req, string orderId) {
+    resource function cancelOrder(http:Caller caller, http:Request req, string orderId) {
         // Get untainted string value if `orderId` is a valid input
-        orderId = getUntaintedStringIfValid(orderId);
+        string validOrderId = getUntaintedStringIfValid(orderId);
 
         // Remove the requested order from the map.
-        _ = ordersMap.remove(orderId);
+        boolean isRemoved = ordersMap.remove(validOrderId);
+        http:Response response = new;
+        json payload = {};
+        if (isRemoved) {
+            payload = { status: "Order : " + validOrderId + " removed." };
+        } else {
+            payload = { status: "Failed to remove the order : " + validOrderId };
+        }
 
-        http:Response response;
-        json payload = { status: "Order : " + orderId + " removed." };
         // Set a generated payload with order status.
         response.setPayload(payload);
 
-        // Send response to the client.
-        _ = client->respond(response);
+        // Send response to the caller.
+        var responseToCaller = caller->respond(response);
+        if (responseToCaller is error) {
+            log:printError("Error sending response", err = responseToCaller);
+        }
     }
 
-    @Description { value: "Resource that handles the HTTP GET requests that are directed
-    to a specific order using path '/orders/<orderID>'" }
+    // Resource that handles the HTTP GET requests that are directed
+    // to a specific order using path '/orders/<orderID>'
     @http:ResourceConfig {
         methods: ["GET"],
         path: "/order/{orderId}",
@@ -234,45 +262,56 @@ service<http:Service> order_mgt bind listener {
             authentication: { enabled: false }
         }
     }
-    findOrder(endpoint client, http:Request req, string orderId) {
+    resource function findOrder(http:Caller caller, http:Request req, string orderId) {
         // Get untainted string value if `orderId` is a valid input
-        orderId = getUntaintedStringIfValid(orderId);
+        string validOrderId = getUntaintedStringIfValid(orderId);
 
         // Find the requested order from the map and retrieve it in JSON format.
-        http:Response response;
-        json payload;
-        if (ordersMap.hasKey(orderId)) {
-            payload = ordersMap[orderId];
+        http:Response response = new;
+        json payload = {};
+        if (ordersMap.hasKey(validOrderId)) {
+            payload = ordersMap[validOrderId];
         } else {
             response.statusCode = http:NOT_FOUND_404;
-            payload = { status: "Order : " + orderId + " cannot be found." };
+            payload = { status: "Order : " + validOrderId + " cannot be found." };
         }
 
         // Set the JSON payload in the outgoing response message.
         response.setPayload(payload);
 
-        // Send response to the client.
-        _ = client->respond(response);
+        // Send response to the caller.
+        var responseToCaller = caller->respond(response);
+        if (responseToCaller is error) {
+            log:printError("Error sending response", err = responseToCaller);
+        }
     }
 }
 
 function getUntaintedStringIfValid(string input) returns @untainted string {
-    boolean isValid = check input.matches(regexInt);
-    if (isValid) {
-        return input;
+    boolean|error isValid = input.matches(regexInt);
+    if (isValid is error) {
+        panic isValid;
     } else {
-        error err = { message: "Validation error: Input '" + input + "' should be valid." };
-        throw err;
+        if (isValid) {
+            return input;
+        } else {
+            error err = error("Validation error: Input '" + input + "' should be valid.");
+            panic err;
+        }
     }
 }
 
 function getUntaintedJsonIfValid(json input) returns @untainted json {
     string inputStr = input.toString();
-    boolean isValid = check inputStr.matches(regexJson);
-    if (isValid) {
-        return input;
+    boolean|error isValid = inputStr.matches(regexJson);
+    if (isValid is error) {
+        panic isValid;
     } else {
-        error err = { message: "Validation error: Input payload '" + inputStr + "' should be valid." };
-        throw err;
+        if (isValid) {
+            return input;
+        } else {
+            error err = error("Validation error: Input payload '" + inputStr + "' should be valid.");
+            panic err;
+        }
     }
 }
