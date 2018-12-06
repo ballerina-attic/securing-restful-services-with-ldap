@@ -33,12 +33,82 @@ The following figure illustrates all the functionalities of the OrderMgt RESTful
 - [Ballerina Distribution](https://github.com/ballerina-lang/ballerina/blob/master/docs/quick-tour.md)
 - A Text Editor or an IDE
 - [Docker](https://docs.docker.com/engine/installation/)
-- To provide required LDAP user store for this guide, we have created a docker image with an embedded Apache DS which contains the user details that should be used in authentication and authorization. we will use the following LDAP schema, which creates two users. The 'counter' user only has 'add_order' scope, whereas the 'admin' user has 'add_order', 'update_order' and 'cancel_order' scopes. Here scopes are equivalent to LDAP groups. Follow the intruction to setup LDAP server neccessory for the guide.
-- Execute the following command to pull docker image from the docker hub.
+- To provide the required LDAP user store for this guide, we have created a Docker image with an embedded Apache DS, which contains the user details that should be used in authentication and authorization. We will use the following LDAP schema, which creates two users. The 'counter' user only has 'add_order' scope, whereas the 'admin' user has 'add_order', 'update_order', and 'cancel_order' scopes. Here scopes are equivalent to LDAP groups. Follow the instructions to setup the LDAP server necessary for the guide.
+
+##### LDAP schema
+```yaml
+version: 1
+
+dn: dc=ballerina,dc=io
+objectClass: extensibleObject
+objectClass: domain
+objectClass: top
+dc: ballerina
+
+dn: ou=Users,dc=ballerina,dc=io
+objectClass: organizationalUnit
+objectClass: top
+ou: Users
+
+dn: ou=Groups,dc=ballerina,dc=io
+objectClass: organizationalUnit
+objectClass: top
+ou: Groups
+
+dn: uid=admin,ou=Users,dc=ballerina,dc=io
+objectClass: organizationalPerson
+objectClass: person
+objectClass: extensibleObject
+objectClass: uidObject
+objectClass: inetOrgPerson
+objectClass: top
+cn: Test User
+givenName: admin
+sn: User
+uid: admin
+mail: admin@ballerina.io
+ou: Users
+userpassword: ballerina
+
+dn: uid=counter,ou=Users,dc=ballerina,dc=io
+objectClass: organizationalPerson
+objectClass: person
+objectClass: extensibleObject
+objectClass: uidObject
+objectClass: inetOrgPerson
+objectClass: top
+cn: Test User
+givenName: counter
+sn: User
+uid: counter
+mail: counter@ballerina.io
+ou: Users
+userpassword: ballerina
+
+dn: cn=add_order,ou=Groups,dc=ballerina,dc=io
+objectClass: groupOfNames
+objectClass: top
+cn: add_order
+member: uid=counter,ou=Users,dc=ballerina,dc=io
+member: uid=admin,ou=Users,dc=ballerina,dc=io
+
+dn: cn=update_order,ou=Groups,dc=ballerina,dc=io
+objectClass: groupOfNames
+objectClass: top
+cn: update_order
+member: uid=admin,ou=Users,dc=ballerina,dc=io
+
+dn: cn=cancel_order,ou=Groups,dc=ballerina,dc=io
+objectClass: groupOfNames
+objectClass: top
+cn: cancel_order
+member: uid=admin,ou=Users,dc=ballerina,dc=io
+```
+- Execute the following command to pull the Docker image from the Docker hub.
 ```bash
 docker pull vijithaekanayake/embedded_ldap_server:1.0.0
 ```
-- After pulling the docker image, execute below command to start the LDAP server.
+- After pulling the Docker image, execute the following command to start the LDAP server.
 ```bash
 docker run -d -p 9389:9389 vijithaekanayake/embedded_ldap_server:1.0.0
 ```
@@ -48,9 +118,10 @@ docker run -d -p 9389:9389 vijithaekanayake/embedded_ldap_server:1.0.0
 
 ## Developing the service
 
-- We can get started with a Ballerina service; 'OrderMgtService', which is the RESTful service that serves the order management request. We will look at securing multiple resources exposed by OrderMgtService to match with the different security requirements.
+- Let's get started with a Ballerina service; 'OrderMgtService', which is the RESTful service that serves the order management request. We will look at securing multiple resources exposed by OrderMgtService to match with the different security requirements.
 
-- Although the language allows you to have any package structure, use the following package structure for this project to follow this guide. The root directory will be denoted by `SAMPLE_ROOT` in the context of this README.
+- Although the language allows you to have any package structure, use the following package structure for this 
+project to follow this guide. The root directory is denoted by `SAMPLE_ROOT` in the context of this README.
 
 ```
 secure-restful-service
@@ -68,8 +139,8 @@ secure-restful-service
    $ ballerina init
 ```
 
- - The above command will initialize the project with a `Ballerina.toml` file and `.ballerina` implementation 
- directory that contain a list of packages in the current directory.
+ - The above command initializes the project with a `Ballerina.toml` file and `.ballerina` implementation 
+ directory that contains a list of packages in the current directory.
  
  - `LdapAuthProviderConfig` record provides the required set of fields for the LDAP integration. Given configurations
   are aligned with the provided embedded LDAP server to demonstrate the scenario.
@@ -86,51 +157,51 @@ final string regexInt = "\\d+";
 final string regexJson = "[a-zA-Z0-9.,{}:\" ]*";
 
 // Configuration options to integrate Ballerina service
-// with an LDAP server
+// with an LDAP server.
 auth:LdapAuthProviderConfig ldapAuthProviderConfig = {
-    // Unique name to identify the user store
+    // Unique name to identify the user store.
     domainName: "ballerina.io",
-    // Connection URL to the LDAP server
-    connectionURL: "ldap://172.17.0.2:9389",
-    // The username used to connect to the LDAP server
+    // Connection URL to the LDAP server.
+    connectionURL: "ldap://localhost:9389",
+    // The username used to connect to the LDAP server.
     connectionName: "uid=admin,ou=system",
-    // Password for the ConnectionName user
+    // Password for the ConnectionName user.
     connectionPassword: "secret",
     // DN of the context or object under which
-    // the user entries are stored in the LDAP server
+    // the user entries are stored in the LDAP server.
     userSearchBase: "ou=Users,dc=ballerina,dc=io",
-    // Object class used to construct user entries
+    // Object class used to construct user entries.
     userEntryObjectClass: "identityPerson",
-    // The attribute used for uniquely identifying a user entry
+    // The attribute used for uniquely identifying a user entry.
     userNameAttribute: "uid",
-    // Filtering criteria used to search for a particular user entry
+    // Filtering criteria used to search for a particular user entry.
     userNameSearchFilter: "(&(objectClass=person)(uid=?))",
-    // Filtering criteria for searching user entries in the LDAP server
+    // Filtering criteria for searching user entries in the LDAP server.
     userNameListFilter: "(objectClass=person)",
     // DN of the context or object under which
-    // the group entries are stored in the LDAP server
+    // the group entries are stored in the LDAP server.
     groupSearchBase: ["ou=Groups,dc=ballerina,dc=io"],
-    // Object class used to construct group entries
+    // Object class used to construct group entries.
     groupEntryObjectClass: "groupOfNames",
-    // The attribute used for uniquely identifying a group entry
+    // The attribute used for uniquely identifying a group entry.
     groupNameAttribute: "cn",
-    // Filtering criteria used to search for a particular group entry
+    // Filtering criteria used to search for a particular group entry.
     groupNameSearchFilter: "(&(objectClass=groupOfNames)(cn=?))",
-    // Filtering criteria for searching group entries in the LDAP server
+    // Filtering criteria for searching group entries in the LDAP server.
     groupNameListFilter: "(objectClass=groupOfNames)",
     // Define the attribute that contains the distinguished names
-    // (DN) of user objects that are in a group
+    // (DN) of user objects that are in a group.
     membershipAttribute: "member",
-    // To indicate whether to cache the role list of a user
+    // To indicate whether to cache the role list of a user.
     userRolesCacheEnabled: true,
-    // Define whether LDAP connection pooling is enabled
+    // Define whether LDAP connection pooling is enabled.
     connectionPoolingEnabled: false,
-    // Timeout in making the initial LDAP connection
+    // Timeout in making the initial LDAP connection.
     ldapConnectionTimeout: 5000,
     // The value of this property is the read timeout in
-    // milliseconds for LDAP operations
+    // milliseconds for LDAP operations.
     readTimeout: 60000,
-    // Retry the authentication request if a timeout happened
+    // Retry the authentication request if a timeout happened.
     retryAttempts: 3
 };
 
@@ -182,7 +253,7 @@ service order_mgt on httpListener {
         if (orderReq is json) {
             string orderId = orderReq.Order.ID.toString();
 
-            // Get untainted value if `orderId` is a valid input
+            // Get untainted value if `orderId` is a valid input.
             orderId = getUntaintedStringIfValid(orderId);
 
             ordersMap[orderId] = orderReq;
@@ -224,17 +295,17 @@ service order_mgt on httpListener {
         var updatedOrder = req.getJsonPayload();
 
         if (updatedOrder is json) {
-            // Get untainted value if `orderId` is a valid input
+            // Get untainted value if `orderId` is a valid input.
             string validOrderId = getUntaintedStringIfValid(orderId);
 
             // Find the order that needs to be updated and retrieve it in JSON format.
             json existingOrder = ordersMap[validOrderId];
 
-            // Get untainted json value if it is a valid json
+            // Get untainted JSON value if it is a valid JSON.
             existingOrder = getUntaintedJsonIfValid(existingOrder);
             updatedOrder = getUntaintedJsonIfValid(updatedOrder);
 
-            // Updating existing order with the attributes of the updated order.
+            // Update existing order with the attributes of the updated order.
             if (existingOrder != null) {
 
                 existingOrder.Order.Name = updatedOrder.Order.Name;
@@ -270,7 +341,7 @@ service order_mgt on httpListener {
         }
     }
     resource function cancelOrder(http:Caller caller, http:Request req, string orderId) {
-        // Get untainted string value if `orderId` is a valid input
+        // Get untainted string value if `orderId` is a valid input.
         string validOrderId = getUntaintedStringIfValid(orderId);
 
         // Remove the requested order from the map.
@@ -294,7 +365,7 @@ service order_mgt on httpListener {
     }
 
     // Resource that handles the HTTP GET requests that are directed
-    // to a specific order using path '/orders/<orderID>'
+    // to a specific order using path '/orders/<orderID>'.
     @http:ResourceConfig {
         methods: ["GET"],
         path: "/order/{orderId}",
@@ -303,7 +374,7 @@ service order_mgt on httpListener {
         }
     }
     resource function findOrder(http:Caller caller, http:Request req, string orderId) {
-        // Get untainted string value if `orderId` is a valid input
+        // Get untainted string value if `orderId` is a valid input.
         string validOrderId = getUntaintedStringIfValid(orderId);
 
         // Find the requested order from the map and retrieve it in JSON format.
@@ -356,13 +427,13 @@ function getUntaintedJsonIfValid(json input) returns @untainted json {
     }
 }
 ```
-- Ballerina uses 'scope' as the way of expressing authorization. Multiple scopes can be assigned to a user, and scopes can then be validated while enforcing authorization. In order to express that certain service or resources require a scope, we have used the `scopes` annotation attribute. According to the `authConfig` of the service, in order to invoke `addOrder` function, the user should have 'add_order' scope, whereas to invoke `updateOrder` and `cancelOrder` user should have 'update_order' and 'cancel_order' scopes respectively.
+- Ballerina uses `scope` as the way of expressing authorization. Multiple scopes can be assigned to a user, and scopes can then be validated while enforcing authorization. In order to express that certain service or resources require a scope, we have used the `scopes` annotation attribute. According to the `authConfig` of the service, in order to invoke `addOrder` function, the user should have 'add_order' scope, whereas to invoke `updateOrder` and `cancelOrder` user should have 'update_order' and 'cancel_order' scopes respectively.
 
 ## Testing
 
 ### Invoking the RESTful service
 
-You can run the RESTful service that you developed above, in your local environment. You need to have the Ballerina installation in you local machine and simply point to the <ballerina>/bin/ballerina binary to execute all the following steps.  
+You can run the RESTful service that you developed above in your local environment. You need to have the Ballerina installation in your local machine and simply point to the <ballerina>/bin/ballerina binary to execute all the following steps.  
 
 1. As the first step you can build a Ballerina executable archive (.balx) of the service that we developed above, 
 using the following command. It points to the directory in which the service we developed above located and it will create an executable binary out of that. Navigate to the `<SAMPLE_ROOT>/guide/` folder and run the following command.
@@ -495,7 +566,7 @@ To check the implementation of the test file, refer to the [secure_order_mgt_ser
 Once you are done with the development, you can deploy the service using any of the methods that we listed below.
 
 ### Deploying locally
-You can deploy the RESTful service that you developed above, in your local environment. You can use the Ballerina executable archive (.balx) archive that we created above and run it in your local environment as follows.
+You can deploy the RESTful service that you developed above, in your local environment. You can use the Ballerina executable archive (.balx) that we created above and run it in your local environment as follows.
 
 ```
 $ ballerina run target/secure_restful_service.balx
@@ -503,14 +574,13 @@ $ ballerina run target/secure_restful_service.balx
 
 ### Deploying on Docker
 
+You can run the service that we developed above as a Docker container. As Ballerina platform offers native support for running Ballerina programs on
+containers, you just need to put the corresponding Docker annotations on your service code.
 
-You can run the service that we developed above as a docker container. As Ballerina platform offers native support for running ballerina programs on
-containers, you just need to put the corresponding docker annotations on your service code.
+- In our OrderMgtService, we need to import `import ballerinax/docker;` and use the annotation `@docker:Config` as shown below to enable Docker image generation during the build time.
 
-- In our OrderMgtService, we need to import  `` import ballerinax/docker; `` and use the annotation `` @docker:Config `` as shown below to enable docker image generation during the build time.
-
-- Then execute `docker ps` command in the terminal and take corresponding Docker process id for the LDAP server. 
-Then execute execute `docker ps <PROCESS_ID>` and take IP address of the LDAP server container.
+- Execute the `docker ps` command in the terminal and take the corresponding Docker process id for the LDAP server.
+- Execute execute `docker inspect <PROCESS_ID>` and take IP address of the LDAP server container.
 
 ```
    $ docker ps
@@ -520,7 +590,7 @@ Then execute execute `docker ps <PROCESS_ID>` and take IP address of the LDAP se
    $ docker inspect <PROCESS_ID>
 ```
 
-- Then update the LDAP connectionURL of LdapAuthProviderConfig with the LDAP server container IP address
+- Then update the LDAP `connectionURL` of `LdapAuthProviderConfig` with the LDAP server container IP address.
 
 ##### secure_order_mgt_service.bal
 ```ballerina
@@ -532,51 +602,51 @@ import ballerina/log;
 import ballerinax/docker;
 
 // Configuration options to integrate Ballerina service
-// with an LDAP server
+// with an LDAP server.
 auth:LdapAuthProviderConfig ldapAuthProviderConfig = {
-    // Unique name to identify the user store
+    // Unique name to identify the user store.
     domainName: "ballerina.io",
-    // Connection URL to the LDAP server
+    // Connection URL to the LDAP server.
     connectionURL: "ldap://<IP_ADDRESS_OF_LDAP_SERVER_CONTAINER>:9389",
-    // The username used to connect to the LDAP server
+    // The username used to connect to the LDAP server.
     connectionName: "uid=admin,ou=system",
-    // Password for the ConnectionName user
+    // Password for the ConnectionName user.
     connectionPassword: "secret",
     // DN of the context or object under which
-    // the user entries are stored in the LDAP server
+    // the user entries are stored in the LDAP server.
     userSearchBase: "ou=Users,dc=ballerina,dc=io",
-    // Object class used to construct user entries
+    // Object class used to construct user entries.
     userEntryObjectClass: "identityPerson",
-    // The attribute used for uniquely identifying a user entry
+    // The attribute used for uniquely identifying a user entry.
     userNameAttribute: "uid",
-    // Filtering criteria used to search for a particular user entry
+    // Filtering criteria used to search for a particular user entry.
     userNameSearchFilter: "(&(objectClass=person)(uid=?))",
-    // Filtering criteria for searching user entries in the LDAP server
+    // Filtering criteria for searching user entries in the LDAP server.
     userNameListFilter: "(objectClass=person)",
     // DN of the context or object under which
-    // the group entries are stored in the LDAP server
+    // the group entries are stored in the LDAP server.
     groupSearchBase: ["ou=Groups,dc=ballerina,dc=io"],
-    // Object class used to construct group entries
+    // Object class used to construct group entries.
     groupEntryObjectClass: "groupOfNames",
-    // The attribute used for uniquely identifying a group entry
+    // The attribute used for uniquely identifying a group entry.
     groupNameAttribute: "cn",
-    // Filtering criteria used to search for a particular group entry
+    // Filtering criteria used to search for a particular group entry.
     groupNameSearchFilter: "(&(objectClass=groupOfNames)(cn=?))",
-    // Filtering criteria for searching group entries in the LDAP server
+    // Filtering criteria for searching group entries in the LDAP server.
     groupNameListFilter: "(objectClass=groupOfNames)",
     // Define the attribute that contains the distinguished names
-    // (DN) of user objects that are in a group
+    // (DN) of user objects that are in a group.
     membershipAttribute: "member",
-    // To indicate whether to cache the role list of a user
+    // To indicate whether to cache the role list of a user.
     userRolesCacheEnabled: true,
-    // Define whether LDAP connection pooling is enabled
+    // Define whether LDAP connection pooling is enabled.
     connectionPoolingEnabled: false,
-    // Timeout in making the initial LDAP connection
+    // Timeout in making the initial LDAP connection.
     ldapConnectionTimeout: 5000,
     // The value of this property is the read timeout in
-    // milliseconds for LDAP operations
+    // milliseconds for LDAP operations.
     readTimeout: 60000,
-    // Retry the authentication request if a timeout happened
+    // Retry the authentication request if a timeout happened.
     retryAttempts: 3
 };
 
@@ -622,7 +692,8 @@ service order_mgt on httpListener {
 ```
 
 - Now you can build a Ballerina executable archive (.balx) of the service that we developed above, using the following command. It points to the service file that we developed above and it will create an executable binary out of that.
-This will also create the corresponding docker image using the docker annotations that you have configured above. Navigate to the `<SAMPLE_ROOT>/src/` folder and run the following command.  
+This will also create the corresponding Docker image using the Docker annotations that you have configured above.
+Navigate to the `<SAMPLE_ROOT>/src/` folder and run the following command.
 
 ```
    $ ballerina build secure_restful_service --skiptests
@@ -631,15 +702,14 @@ This will also create the corresponding docker image using the docker annotation
    docker run -d -p 9090:9090 ballerina.guides.io/secure_restful_service:v1.0
 ```
 
-- Once you successfully build the docker image, you can run it with the `` docker run`` command that is shown in the previous step.  
+- Once you successfully build the Docker image, you can run it with the `docker run` command that is shown in the previous step.
 
 ```   
    docker run -d -p 9090:9090 ballerina.guides.io/secure_restful_service:v1.0
 ```
 
-  Here we run the docker image with flag`` -p <host_port>:<container_port>`` so that we  use  the host port 9090 and the container port 9090. Therefore you can access the service through the host port.
-
-- Verify docker container is running with the use of `` $ docker ps``. The status of the docker container should be shown as 'Up'.
+Here we run the Docker image with flag`` -p <host_port>:<container_port>`` so that we  use  the host port 9090 and the container port 9090. Therefore you can access the service through the host port.
+- Verify Docker container is running with the use of `` $ docker ps``. The status of the Docker container should be shown as 'Up'.
 - You can access the service using the same curl commands that we've used above.
 
 ```
@@ -650,9 +720,9 @@ This will also create the corresponding docker image using the docker annotation
 
 ### Deploying on Kubernetes
 
-- You can run the service that we developed above, on Kubernetes. The Ballerina language offers native support for running a ballerina programs on Kubernetes,
-with the use of Kubernetes annotations that you can include as part of your service code. Also, it will take care of the creation of the docker images.
-So you don't need to explicitly create docker images prior to deploying it on Kubernetes.   
+- You can run the service that we developed above, on Kubernetes. The Ballerina language offers native support for running a Ballerina programs on Kubernetes,
+with the use of Kubernetes annotations that you can include as part of your service code. Also, it will take care of the creation of the Docker images.
+So you don't need to explicitly create Docker images prior to deploying it on Kubernetes.
 
 - We need to import `` import ballerinax/kubernetes; `` and use `` @kubernetes `` annotations as shown below to enable kubernetes deployment for the service we developed above.
 
@@ -671,51 +741,51 @@ import ballerina/log;
 import ballerinax/kubernetes;
 
 // Configuration options to integrate Ballerina service
-// with an LDAP server
+// with an LDAP server.
 auth:LdapAuthProviderConfig ldapAuthProviderConfig = {
-    // Unique name to identify the user store
+    // Unique name to identify the user store.
     domainName: "ballerina.io",
-    // Connection URL to the LDAP server
+    // Connection URL to the LDAP server.
     connectionURL: "ldap://<IP_ADDRESS_OF_LDAP_SERVER_CONTAINER>:9389",
-    // The username used to connect to the LDAP server
+    // The username used to connect to the LDAP server.
     connectionName: "uid=admin,ou=system",
-    // Password for the ConnectionName user
+    // Password for the ConnectionName user.
     connectionPassword: "secret",
     // DN of the context or object under which
-    // the user entries are stored in the LDAP server
+    // the user entries are stored in the LDAP server.
     userSearchBase: "ou=Users,dc=ballerina,dc=io",
-    // Object class used to construct user entries
+    // Object class used to construct user entries.
     userEntryObjectClass: "identityPerson",
-    // The attribute used for uniquely identifying a user entry
+    // The attribute used for uniquely identifying a user entry.
     userNameAttribute: "uid",
-    // Filtering criteria used to search for a particular user entry
+    // Filtering criteria used to search for a particular user entry.
     userNameSearchFilter: "(&(objectClass=person)(uid=?))",
-    // Filtering criteria for searching user entries in the LDAP server
+    // Filtering criteria for searching user entries in the LDAP server.
     userNameListFilter: "(objectClass=person)",
     // DN of the context or object under which
-    // the group entries are stored in the LDAP server
+    // the group entries are stored in the LDAP server.
     groupSearchBase: ["ou=Groups,dc=ballerina,dc=io"],
-    // Object class used to construct group entries
+    // Object class used to construct group entries.
     groupEntryObjectClass: "groupOfNames",
-    // The attribute used for uniquely identifying a group entry
+    // The attribute used for uniquely identifying a group entry.
     groupNameAttribute: "cn",
-    // Filtering criteria used to search for a particular group entry
+    // Filtering criteria used to search for a particular group entry.
     groupNameSearchFilter: "(&(objectClass=groupOfNames)(cn=?))",
-    // Filtering criteria for searching group entries in the LDAP server
+    // Filtering criteria for searching group entries in the LDAP server.
     groupNameListFilter: "(objectClass=groupOfNames)",
     // Define the attribute that contains the distinguished names
-    // (DN) of user objects that are in a group
+    // (DN) of user objects that are in a group.
     membershipAttribute: "member",
-    // To indicate whether to cache the role list of a user
+    // To indicate whether to cache the role list of a user.
     userRolesCacheEnabled: true,
-    // Define whether LDAP connection pooling is enabled
+    // Define whether LDAP connection pooling is enabled.
     connectionPoolingEnabled: false,
-    // Timeout in making the initial LDAP connection
+    // Timeout in making the initial LDAP connection.
     ldapConnectionTimeout: 5000,
     // The value of this property is the read timeout in
-    // milliseconds for LDAP operations
+    // milliseconds for LDAP operations.
     readTimeout: 60000,
-    // Retry the authentication request if a timeout happened
+    // Retry the authentication request if a timeout happened.
     retryAttempts: 3
 };
 
@@ -770,7 +840,7 @@ map<json> ordersMap = {};
 service order_mgt on httpListener {
 ```
 
-- Here we have used ``  @kubernetes:Deployment `` to specify the docker image name which will be created as part of building this service.
+- Here we have used ``  @kubernetes:Deployment `` to specify the Docker image name which will be created as part of building this service.
 - We have also specified `` @kubernetes:Service {} `` so that it will create a Kubernetes service which will expose the Ballerina service that is running on a Pod.  
 - In addition we have used `` @kubernetes:Ingress `` which is the external interface to access your service (with path `` /`` and host name ``ballerina.guides.io``)
 
@@ -778,8 +848,8 @@ If you are using Minikube, you need to set a couple of additional attributes to 
 - `dockerCertPath` - The path to the certificates directory of Minikube (e.g., `/home/ballerina/.minikube/certs`).
 - `dockerHost` - The host for the running cluster (e.g., `tcp://192.168.99.100:2376`). The IP address of the cluster can be found by running the `minikube ip` command.
 
-- Now you can build a Ballerina executable archive (.balx) of the service that we developed above, using the following command. It points to the service file that we developed above and it will create an executable binary out of that.
-This will also create the corresponding docker image and the Kubernetes artifacts using the Kubernetes annotations that you have configured above.
+- Now you can build a Ballerina executable archive (.balx) of the service that we developed above by using the following command. It points to the service file that we developed above and it creates an executable binary out of that.
+This also creates the corresponding Docker image and the Kubernetes artifacts using the Kubernetes annotations that you have configured above.
 
 ```
    $ ballerina build secure_restful_service --skiptests
@@ -788,8 +858,8 @@ This will also create the corresponding docker image and the Kubernetes artifact
    kubectl apply -f ./target/kubernetes/secure_restful_service
 ```
 
-- You can verify that the docker image that we specified in `` @kubernetes:Deployment `` is created, by using `` docker images ``.
-- Also the Kubernetes artifacts related our service, will be generated in `` ./target/secure_restful_service/kubernetes``.
+- You can verify that the Docker image that we specified in `@kubernetes:Deployment` is created, by using `docker images`.
+- Also, the Kubernetes artifacts related to your service is generated in `./target/secure_restful_service/kubernetes`.
 - Now you can create the Kubernetes deployment using:
 
 ```
@@ -801,7 +871,7 @@ This will also create the corresponding docker image and the Kubernetes artifact
    service "ballerina-guides-secure-restful-service" created
 ```
 
-- You can verify Kubernetes deployment, service and ingress are running properly, by using following Kubernetes commands.
+- You can verify if the Kubernetes deployment, service, and ingress are running properly by using the following Kubernetes commands.
 
 ```
    $ kubectl get service
@@ -823,7 +893,7 @@ curl -kv -X POST -u counter:ballerina -d \
 
 ## Observability
 Ballerina is by default observable. Meaning you can easily observe your services, resources, etc.
-However, observability is disabled by default via configuration. Observability can be enabled by adding following configurations to `ballerina.conf` file in `secure-restful-service/src/`.
+However, observability is disabled by default via configuration. Observability can be enabled by adding the following configurations to `ballerina.conf` file in `secure-restful-service/src/`.
 
 ```ballerina
 [observability]
@@ -838,10 +908,10 @@ enabled=true
 ```
 
 ### Tracing
-You can monitor ballerina services using in built tracing capabilities of Ballerina. We'll use [Jaeger](https://github.com/jaegertracing/jaeger) as the distributed tracing system.
+You can monitor Ballerina services using in-built tracing capabilities off Ballerina. We use [Jaeger](https://github.com/jaegertracing/jaeger) as the distributed tracing system here.
 Follow the following steps to use tracing with Ballerina.
 
-- Run Jaeger docker image using the following command
+- Run Jaeger Docker image using the following command
 ```bash
    docker run -d -p5775:5775/udp -p6831:6831/udp -p6832:6832/udp -p5778:5778 -p16686:16686
    -p14268:14268 jaegertracing/all- in-one:latest
@@ -852,7 +922,7 @@ Follow the following steps to use tracing with Ballerina.
    $ ballerina run secure_restful_service/
 ```
 
-- Observe the tracing using Jaeger UI using following URL
+- Observe the tracing using Jaeger UI by accessing the following URL.
 ```
    http://localhost:16686
 ```
@@ -863,8 +933,8 @@ Follow the following steps to use tracing with Ballerina.
 
 
 ### Metrics
-Metrics and alarts are built-in with ballerina. We will use Prometheus as the monitoring tool.
-Follow the below steps to set up Prometheus and view metrics for Ballerina restful service.
+Metrics and alerts are built-in with Ballerina. We use Prometheus as the monitoring tool.
+Follow the steps below to set up Prometheus and view metrics for Ballerina RESTful service.
 
 - Set the below configurations in the `ballerina.conf` file in the project root, in addition to the user related configuration.
 ```ballerina
@@ -893,42 +963,42 @@ Follow the below steps to set up Prometheus and view metrics for Ballerina restf
         - targets: ['172.17.0.1:9797']
 ```
 
-   NOTE : Replace `172.17.0.1` if your local docker IP differs from `172.17.0.1`
+    > **Note** : Replace `172.17.0.1` if your local Docker IP differs from `172.17.0.1`.
 
-- Run the Prometheus docker image using the following command
+- Run the Prometheus Docker image using the following command.
 ```
    docker run -p 19090:9090 -v /tmp/prometheus.yml prom/prometheus
 ```
 
-- You can access Prometheus at the following URL
+- You can access Prometheus at the following URL.
 ```
    http://localhost:19090/
 ```
 
-- Promethues UI with metrics for secure_restful_service
+- Promethues UI with metrics for secure_restful_service.
 
    ![promethues screenshot](images/metrics-screenshot.png "Prometheus UI")
 
 ### Logging
-Ballerina has a log package for logging to the console. You can import ballerina/log package and start logging. The following section will describe how to search, analyze, and visualize logs in real time using Elastic Stack.
+Ballerina has a log package for logging to the console. You can `import ballerina/log` package and start logging. The following section describes how to search, analyze, and visualize logs in real time using Elastic Stack.
 
-- Start Elasticsearch using the following command
+- Start Elasticsearch using the following command.
 ```
    docker run -p 9200:9200 -p 9300:9300 -it -h elasticsearch --name
    elasticsearch docker.elastic.co/elasticsearch/elasticsearch:6.5.1
 ```
 
-   NOTE: Linux users might need to run `sudo sysctl -w vm.max_map_count=262144` to increase `vm.max_map_count`
+   NOTE: Linux users might need to run `sudo sysctl -w vm.max_map_count=262144` to increase `vm.max_map_count`.
 
-- Start Kibana plugin for data visualization with Elasticsearch
+- Start Kibana plugin for data visualization with Elasticsearch.
 ```
    docker run -p 5601:5601 -h kibana --name kibana --link elasticsearch:elasticsearch
    docker.elastic.co/kibana/kibana:6.5.1   
 ```
 
-- Configure logstash to format the ballerina logs
+- Configure logstash to format the Ballerina logs.
 
-    i) Create a file named `logstash.conf` with the following content
+    i) Create a file named `logstash.conf` with the following content.
 
     ```
     input {
@@ -955,9 +1025,9 @@ Ballerina has a log package for logging to the console. You can import ballerina
     }
     ```
 
-    ii) Save the above `logstash.conf` inside a directory named as `{SAMPLE_ROOT_DIRECTORY}\pipeline`
+    ii) Save the above `logstash.conf` inside a directory named `{SAMPLE_ROOT_DIRECTORY}\pipeline`.
 
-    iii) Start the logstash container, replace the {SAMPLE_ROOT_DIRECTORY} with your directory name
+    iii) Start the logstash container, replace the {SAMPLE_ROOT_DIRECTORY} with your directory name.
 
     ```
     docker run -h logstash --name logstash --link elasticsearch:elasticsearch -it --rm
@@ -965,9 +1035,9 @@ Ballerina has a log package for logging to the console. You can import ballerina
         -p 5044:5044 docker.elastic.co/logstash/logstash:6.5.1
     ```
 
- - Configure filebeat to ship the ballerina logs
+ - Configure filebeat to ship the Ballerina logs.
 
-     i) Create a file named `filebeat.yml` with the following content
+     i) Create a file named `filebeat.yml` with the following content.
     ```
     filebeat.prospectors:
       - type: log
@@ -976,10 +1046,9 @@ Ballerina has a log package for logging to the console. You can import ballerina
     output.logstash:
         hosts: ["logstash:5044"]
     ```
-     ii) Save the above `filebeat.yml` inside a directory named as `{SAMPLE_ROOT_DIRECTORY}\filebeat`   
+     ii) Save the above `filebeat.yml` inside a directory named as `{SAMPLE_ROOT_DIRECTORY}\filebeat`.  
 
-
-     iii) Start the logstash container, replace the {SAMPLE_ROOT_DIRECTORY} with your directory name
+     iii) Start the logstash container and replace the {SAMPLE_ROOT_DIRECTORY} with your directory name.
 
     ```
     docker run -v {SAMPLE_ROOT_DIRECTORY}/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
@@ -987,11 +1056,11 @@ Ballerina has a log package for logging to the console. You can import ballerina
         --link logstash:logstash docker.elastic.co/beats/filebeat:6.5.1
     ```
 
- - Access Kibana to visualize the logs using following URL
+ - Access Kibana to visualize the logs using following URL.
 ```
 http://localhost:5601
 ```
 
- - Kibana log visualization for the restful service sample
+ - Kibana log visualization for the restful service sample.
 
      ![logging screenshot](images/logging-screenshot.png "Kibana UI")

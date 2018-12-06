@@ -196,7 +196,6 @@ service order_mgt on httpListener {
 
             // Updating existing order with the attributes of the updated order.
             if (existingOrder != null) {
-
                 existingOrder.Order.Name = updatedOrder.Order.Name;
                 existingOrder.Order.Description = updatedOrder.Order.Description;
                 ordersMap[validOrderId] = existingOrder;
