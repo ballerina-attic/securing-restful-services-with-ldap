@@ -29,14 +29,11 @@ The following figure illustrates all the functionalities of the OrderMgt RESTful
 
 ## Prerequisites
 
-- JDK 1.8 or later
-- [Ballerina Distribution](https://github.com/ballerina-lang/ballerina/blob/master/docs/quick-tour.md)
-- A Text Editor or an IDE
+- [Ballerina Distribution](https://ballerina.io/learn/getting-started/)
+- A Text Editor or an IDE 
+> **Tip**: You can install the following Ballerina IDE plugins: [VSCode](https://marketplace.visualstudio.com/items?itemName=ballerina.ballerina), [IntelliJ IDEA](https://plugins.jetbrains.com/plugin/9520-ballerina)
 - [Docker](https://docs.docker.com/engine/installation/)
-- To provide the required LDAP user store for this guide, we have created a Docker image with an embedded Apache DS, which contains the user details that should be used in authentication and authorization. We will use the following LDAP schema, which creates two users. The 'counter' user only has 'add_order' scope, whereas the 'admin' user has 'add_order', 'update_order', and 'cancel_order' scopes. Here scopes are equivalent to LDAP groups. Follow the instructions to setup the LDAP server necessary for the guide.
-
-### Optional requirements
-- Ballerina IDE plugins ([VSCode](https://marketplace.visualstudio.com/items?itemName=ballerina.ballerina), [IntelliJ IDEA](https://plugins.jetbrains.com/plugin/9520-ballerina))
+- To provide the required LDAP user store for this guide, we have created a Docker image with an embedded Apache DS, which contains the user details that should be used in authentication and authorization. We will use the following LDAP schema, which creates two users. The 'counter' user only has 'add_order' scope, whereas the 'admin' user has 'add_order', 'update_order', and 'cancel_order' scopes. Here, scopes are equivalent to LDAP groups. Follow the instructions below to setup the LDAP server necessary for the guide.
 
 ##### LDAP schema
 ```yaml
