@@ -20,11 +20,15 @@ import ballerina/http;
 http:Client clientEPUnauthenticated = new("https://localhost:9090/ordermgt");
 
 http:Client clientEPCounter = new("https://localhost:9090/ordermgt", config = {
-    auth: { scheme: http:BASIC_AUTH, username: "counter", password: "ballerina" }
+    auth: { scheme: http:BASIC_AUTH,
+            config: { username: "counter", password: "ballerina" }
+    }
 });
 
 http:Client clientEPAdmin = new("https://localhost:9090/ordermgt", config = {
-    auth: { scheme: http:BASIC_AUTH, username: "admin", password: "ballerina" }
+    auth: { scheme: http:BASIC_AUTH,
+            config: { username: "admin", password: "ballerina" }
+    }
 });
 
 // Unauthenticated invocations
@@ -47,10 +51,10 @@ function testResourceAddOrderUnauthenticated() {
         var resPayload = response.getTextPayload();
         if (resPayload is string) {
             test:assertEquals(resPayload, "Authentication failure", msg = "Response mismatch!");
-        } else if (resPayload is error) {
+        } else {
             test:assertFail(msg = "Failed to parse the text payload");
         }
-    } else if (response is error) {
+    } else {
         test:assertFail(msg = "Failed to call the endpoint");
     }
 }
@@ -76,10 +80,10 @@ function testResourceUpdateOrderUnauthenticated() {
         var resPayload = response.getTextPayload();
         if (resPayload is string) {
             test:assertEquals(resPayload, "Authentication failure", msg = "Response mismatch!");
-        } else if (resPayload is error) {
+        } else {
             test:assertFail(msg = "Failed to parse the text payload");
         }
-    } else if (response is error) {
+    } else {
         test:assertFail(msg = "Failed to call the endpoint");
     }
 }
@@ -102,10 +106,10 @@ function testResourceFindOrderUnauthenticated() {
         if (resPayload is json) {
             test:assertEquals(resPayload.toString(), "{\"status\":\"Order : 100500 cannot be found.\"}",
                 msg = "Response mismatch!");
-        } else if (resPayload is error) {
+        } else {
             test:assertFail(msg = "Failed to parse the json payload");
         }
-    } else if (response is error) {
+    } else {
         test:assertFail(msg = "Failed to call the endpoint");
     }
 }
@@ -127,10 +131,10 @@ function testResourceCancelOrderUnauthenticated() {
         var resPayload = response.getTextPayload();
         if (resPayload is string) {
             test:assertEquals(resPayload, "Authentication failure", msg = "Response mismatch!");
-        } else if (resPayload is error) {
+        } else {
             test:assertFail(msg = "Failed to parse the text payload");
         }
-    } else if (response is error) {
+    } else {
         test:assertFail(msg = "Failed to call the endpoint");
     }
 }
@@ -157,10 +161,10 @@ function testResourceAddOrderWithCounterUser() {
         if (resPayload is json) {
             test:assertEquals(resPayload.toString(),
                 "{\"status\":\"Order Created.\", \"orderId\":\"100501\"}", msg = "Response mismatch!");
-        } else if (resPayload is error) {
+        } else {
             test:assertFail(msg = "Failed to parse the json payload");
         }
-    } else if (response is error) {
+    } else {
         test:assertFail(msg = "Failed to call the endpoint");
     }
 }
@@ -185,10 +189,10 @@ function testResourceUpdateOrderWithCounterUser() {
         var resPayload = response.getTextPayload();
         if (resPayload is string) {
             test:assertEquals(resPayload, "Authorization failure", msg = "Response mismatch!");
-        } else if (resPayload is error) {
+        } else {
             test:assertFail(msg = "Failed to parse the text payload");
         }
-    } else if (response is error) {
+    } else {
         test:assertFail(msg = "Failed to call the endpoint");
     }
 }
@@ -212,10 +216,10 @@ function testResourceFindOrderWithCounterUser() {
             test:assertEquals(resPayload.toString(),
                 "{\"Order\":{\"ID\":\"100501\", \"Name\":\"XYZ\", \"Description\":\"Sample order.\"}}",
                 msg = "Response mismatch!");
-        } else if (resPayload is error) {
+        } else {
             test:assertFail(msg = "Failed to parse the json payload");
         }
-    } else if (response is error) {
+    } else {
         test:assertFail(msg = "Failed to call the endpoint");
     }
 }
@@ -237,10 +241,10 @@ function testResourceCancelOrderWithCounterUser() {
         var resPayload = response.getTextPayload();
         if (resPayload is string) {
             test:assertEquals(resPayload, "Authorization failure", msg = "Response mismatch!");
-        } else if (resPayload is error) {
+        } else {
             test:assertFail(msg = "Failed to parse the text payload");
         }
-    } else if (response is error) {
+    } else {
         test:assertFail(msg = "Failed to call the endpoint");
     }
 }
@@ -266,10 +270,10 @@ function testResourceAddOrderWithAdminUser() {
         if (resPayload is json) {
             test:assertEquals(resPayload.toString(),
                 "{\"status\":\"Order Created.\", \"orderId\":\"100502\"}", msg = "Response mismatch!");
-        } else if (resPayload is error) {
+        } else {
             test:assertFail(msg = "Failed to parse the json payload");
         }
-    } else if (response is error) {
+    } else {
         test:assertFail(msg = "Failed to call the endpoint");
     }
 }
@@ -296,10 +300,10 @@ function testResourceUpdateOrderWithAdminUser() {
             test:assertEquals(resPayload.toString(),
                 "{\"Order\":{\"ID\":\"100502\", \"Name\":\"XYZ\", \"Description\":\"Updated order.\"}}",
                 msg = "Response mismatch!");
-        } else if (resPayload is error) {
+        } else {
             test:assertFail(msg = "Failed to parse the json payload");
         }
-    } else if (response is error) {
+    } else {
         test:assertFail(msg = "Failed to call the endpoint");
     }
 }
@@ -309,10 +313,8 @@ function testResourceUpdateOrderWithAdminUser() {
 }
 // Function to test GET resource 'findOrder' with admin user.
 function testResourceFindOrderWithAdminUser() {
-    // Initialize empty http requests and responses.
-    http:Request request;
     // Send 'GET' request and obtain the response.
-    var response = clientEPAdmin->get("/order/100502", message = request);
+    var response = clientEPAdmin->get("/order/100502");
     if (response is http:Response) {
         // Expected response code is 200.
         test:assertEquals(response.statusCode, http:OK_200,
@@ -323,10 +325,10 @@ function testResourceFindOrderWithAdminUser() {
             test:assertEquals(resPayload.toString(),
                 "{\"Order\":{\"ID\":\"100502\", \"Name\":\"XYZ\", \"Description\":\"Updated order.\"}}",
                 msg = "Response mismatch!");
-        } else if (resPayload is error) {
+        } else {
             test:assertFail(msg = "Failed to parse the json payload");
         }
-    } else if (response is error) {
+    } else {
         test:assertFail(msg = "Failed to call the endpoint");
     }
 }
@@ -349,10 +351,10 @@ function testResourceCancelOrderWithAdminUser() {
         if (resPayload is json) {
             test:assertEquals(resPayload.toString(), "{\"status\":\"Order : 100502 removed.\"}",
                 msg = "Response mismatch!");
-        } else if (resPayload is error) {
+        } else {
             test:assertFail(msg = "Failed to parse the json payload");
         }
-    } else if (response is error) {
+    } else {
         test:assertFail(msg = "Failed to call the endpoint");
     }
 }

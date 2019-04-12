@@ -65,8 +65,7 @@ auth:LdapAuthProviderConfig ldapAuthProviderConfig = {
     connectionPoolingEnabled: false,
     // Timeout in making the initial LDAP connection
     ldapConnectionTimeout: 5000,
-    // The value of this property is the read timeout in
-    // milliseconds for LDAP operations
+    // Read timeout for LDAP operations in milliseconds
     readTimeout: 60000,
     // Retry the authentication request if a timeout happened
     retryAttempts: 3
@@ -74,9 +73,9 @@ auth:LdapAuthProviderConfig ldapAuthProviderConfig = {
 
 http:AuthProvider basicAuthProvider = {
     id: "basic01",
-    scheme: http:AUTHN_SCHEME_BASIC,
-    authStoreProvider: http:AUTH_PROVIDER_LDAP,
-    authStoreProviderConfig: ldapAuthProviderConfig
+    scheme: http:BASIC_AUTH,
+    authStoreProvider: http:LDAP_AUTH_STORE,
+    config: ldapAuthProviderConfig
 };
 
 //@kubernetes:Ingress {
@@ -163,7 +162,7 @@ service order_mgt on httpListener {
             if (responseToCaller is error) {
                 log:printError("Error sending response", err = responseToCaller);
             }
-        } else if (orderReq is error) {
+        } else {
             var responseToCaller = caller->respond("Error in extracting json payload from request");
             if (responseToCaller is error) {
                 log:printError("Error sending response", err = responseToCaller);
@@ -211,7 +210,7 @@ service order_mgt on httpListener {
             if (responseToCaller is error) {
                 log:printError("Error sending response", err = responseToCaller);
             }
-        } else if (updatedOrder is error) {
+        } else {
             var responseToCaller = caller->respond("Error in extracting json payload from request");
             if (responseToCaller is error) {
                 log:printError("Error sending response", err = responseToCaller);
