@@ -22,7 +22,7 @@ before_install:
 - docker run -d -p 9389:9389 vijithaekanayake/embedded_ldap_server:1.0.0
 
 script:
-- BALLERINA_VERSION=${VERSION:-0.991.0}
+- BALLERINA_VERSION="${VERSION:-0.991.0}"
 - echo -e "\033[36m${BALLERINA_VERSION}\033[m"
 
 - DISTRIBUTION_NAME=ballerina-${BALLERINA_VERSION}
