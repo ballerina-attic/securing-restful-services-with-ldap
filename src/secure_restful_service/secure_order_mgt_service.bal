@@ -14,18 +14,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import ballerina/auth;
 import ballerina/http;
+import ballerina/ldap;
 import ballerina/log;
 //import ballerinax/docker;
 //import ballerinax/kubernetes;
 
-final string regexInt = "\\d+";
-final string regexJson = "[a-zA-Z0-9.,{}:\" ]*";
-
 // Configuration options to integrate Ballerina service
 // with an LDAP server
-auth:LdapAuthProviderConfig ldapAuthProviderConfig = {
+ldap:LdapConnectionConfig ldapConnectionConfig = {
     // Unique name to identify the user store
     domainName: "ballerina.io",
     // Connection URL to the LDAP server
@@ -66,17 +63,13 @@ auth:LdapAuthProviderConfig ldapAuthProviderConfig = {
     // Timeout in making the initial LDAP connection
     ldapConnectionTimeout: 5000,
     // Read timeout for LDAP operations in milliseconds
-    readTimeout: 60000,
+    readTimeoutInMillis: 60000,
     // Retry the authentication request if a timeout happened
     retryAttempts: 3
 };
 
-http:AuthProvider basicAuthProvider = {
-    id: "basic01",
-    scheme: http:BASIC_AUTH,
-    authStoreProvider: http:LDAP_AUTH_STORE,
-    config: ldapAuthProviderConfig
-};
+ldap:InboundLdapAuthProvider ldapAuthProvider = new(ldapConnectionConfig, "ldap01");
+http:BasicAuthHandler basicAuthHandler = new(ldapAuthProvider);
 
 //@kubernetes:Ingress {
 //    hostname:"ballerina.guides.io",
@@ -100,7 +93,8 @@ http:AuthProvider basicAuthProvider = {
 //    tag:"v1.0"
 //}
 //@docker:Expose{}
-listener http:Listener httpListener = new(9090, config = {
+listener http:Listener httpListener = new(9090, {
+    auth: { authHandlers: [basicAuthHandler] },
     secureSocket: {
         keyStore: {
             path: "${ballerina.home}/bre/security/ballerinaKeystore.p12",
@@ -110,19 +104,18 @@ listener http:Listener httpListener = new(9090, config = {
             path: "${ballerina.home}/bre/security/ballerinaTruststore.p12",
             password: "ballerina"
         }
-    },
-    authProviders: [basicAuthProvider]
+    }
 });
 
 // Order management is done using an in memory map.
 // Add some sample orders to 'orderMap' at startup.
-map<json> ordersMap = {};
+map<map<json>> ordersMap = {};
 
 // RESTful service.
 @http:ServiceConfig {
     basePath: "/ordermgt",
-    authConfig: {
-        authentication: { enabled: true }
+    auth: {
+        enabled: true
     }
 }
 service order_mgt on httpListener {
@@ -132,27 +125,27 @@ service order_mgt on httpListener {
     @http:ResourceConfig {
         methods: ["POST"],
         path: "/order",
-        authConfig: {
+        auth: {
             scopes: ["add_order"]
         }
     }
     resource function addOrder(http:Caller caller, http:Request req) {
         var orderReq = req.getJsonPayload();
-        if (orderReq is json) {
+        if (orderReq is map<json>) {
             string orderId = orderReq.Order.ID.toString();
 
             // Get untainted value if `orderId` is a valid input
-            orderId = getUntaintedStringIfValid(orderId);
+            orderId = <@untainted> orderId;
 
             ordersMap[orderId] = orderReq;
 
             // Create response message.
             json payload = { status: "Order Created.", orderId: orderId };
             http:Response response = new;
-            response.setPayload(untaint payload);
+            response.setPayload(<@untainted> payload);
 
             // Set 201 Created status code in the response message.
-            response.statusCode = http:CREATED_201;
+            response.statusCode = http:STATUS_CREATED;
             // Set 'Location' header in the response message.
             // This can be used by the client to locate the newly added order.
             response.setHeader("Location", "http://localhost:9090/ordermgt/order/" + orderId);
@@ -175,36 +168,44 @@ service order_mgt on httpListener {
     @http:ResourceConfig {
         methods: ["PUT"],
         path: "/order/{orderId}",
-        authConfig: {
+        auth: {
             scopes: ["update_order"]
         }
     }
     resource function updateOrder(http:Caller caller, http:Request req, string orderId) {
         var updatedOrder = req.getJsonPayload();
+        http:Response response = new;
 
         if (updatedOrder is json) {
             // Get untainted value if `orderId` is a valid input
-            string validOrderId = getUntaintedStringIfValid(orderId);
+            string validOrderId = <@untainted> orderId;
 
             // Find the order that needs to be updated and retrieve it in JSON format.
-            json existingOrder = ordersMap[validOrderId];
-
-            // Get untainted json value if it is a valid json
-            existingOrder = getUntaintedJsonIfValid(existingOrder);
-            updatedOrder = getUntaintedJsonIfValid(updatedOrder);
-
-            // Updating existing order with the attributes of the updated order.
-            if (existingOrder != null) {
-                existingOrder.Order.Name = updatedOrder.Order.Name;
-                existingOrder.Order.Description = updatedOrder.Order.Description;
-                ordersMap[validOrderId] = existingOrder;
-            } else {
-                existingOrder = "Order : " + validOrderId + " cannot be found.";
+            var existingOrder = ordersMap[validOrderId];
+            if (existingOrder is map<map<json>>) {                
+                existingOrder = <@untainted> existingOrder;
             }
 
-            http:Response response = new;
-            // Set the JSON payload to the outgoing response message to the client.
-            response.setPayload(existingOrder);
+            // Get untainted json value if it is a valid json
+            updatedOrder = <@untainted> updatedOrder;
+
+            // Updating existing order with the attributes of the updated order.
+            if (existingOrder is map<map<json>>) {
+                var name = updatedOrder.Order.Name;
+                if (name is json) {
+                    existingOrder["Order"]["Name"] = name;
+                } 
+                var description = updatedOrder.Order.Description;
+                if (description is json) {
+                   existingOrder["Order"]["Description"] =  description;
+                }
+                ordersMap[validOrderId] = existingOrder;
+                // Set the JSON payload to the outgoing response message to the client.
+                response.setPayload(existingOrder);
+            } else {
+                response.setPayload("Order : " + validOrderId + " cannot be found.");
+            }
+
             // Send response to the caller.
             var responseToCaller = caller->respond(response);
             if (responseToCaller is error) {
@@ -223,19 +224,19 @@ service order_mgt on httpListener {
     @http:ResourceConfig {
         methods: ["DELETE"],
         path: "/order/{orderId}",
-        authConfig: {
+        auth: {
             scopes: ["cancel_order"]
         }
     }
     resource function cancelOrder(http:Caller caller, http:Request req, string orderId) {
         // Get untainted string value if `orderId` is a valid input
-        string validOrderId = getUntaintedStringIfValid(orderId);
+        string validOrderId = <@untainted> orderId;
 
         // Remove the requested order from the map.
-        boolean isRemoved = ordersMap.remove(validOrderId);
+        var ordersMapAfterRemoving = ordersMap.remove(validOrderId);
         http:Response response = new;
         json payload = {};
-        if (isRemoved) {
+        if (!ordersMap.hasKey(validOrderId)) {
             payload = { status: "Order : " + validOrderId + " removed." };
         } else {
             payload = { status: "Failed to remove the order : " + validOrderId };
@@ -256,13 +257,13 @@ service order_mgt on httpListener {
     @http:ResourceConfig {
         methods: ["GET"],
         path: "/order/{orderId}",
-        authConfig: {
-            authentication: { enabled: false }
+        auth: {
+            enabled: false
         }
     }
     resource function findOrder(http:Caller caller, http:Request req, string orderId) {
         // Get untainted string value if `orderId` is a valid input
-        string validOrderId = getUntaintedStringIfValid(orderId);
+        string validOrderId = <@untainted> orderId;
 
         // Find the requested order from the map and retrieve it in JSON format.
         http:Response response = new;
@@ -270,7 +271,7 @@ service order_mgt on httpListener {
         if (ordersMap.hasKey(validOrderId)) {
             payload = ordersMap[validOrderId];
         } else {
-            response.statusCode = http:NOT_FOUND_404;
+            response.statusCode = http:STATUS_NOT_FOUND;
             payload = { status: "Order : " + validOrderId + " cannot be found." };
         }
 
@@ -285,31 +286,3 @@ service order_mgt on httpListener {
     }
 }
 
-function getUntaintedStringIfValid(string input) returns @untainted string {
-    boolean|error isValid = input.matches(regexInt);
-    if (isValid is error) {
-        panic isValid;
-    } else {
-        if (isValid) {
-            return input;
-        } else {
-            error err = error("Validation error: Input '" + input + "' should be valid.");
-            panic err;
-        }
-    }
-}
-
-function getUntaintedJsonIfValid(json input) returns @untainted json {
-    string inputStr = input.toString();
-    boolean|error isValid = inputStr.matches(regexJson);
-    if (isValid is error) {
-        panic isValid;
-    } else {
-        if (isValid) {
-            return input;
-        } else {
-            error err = error("Validation error: Input payload '" + inputStr + "' should be valid.");
-            panic err;
-        }
-    }
-}

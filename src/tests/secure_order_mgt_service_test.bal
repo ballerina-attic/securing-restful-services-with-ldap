@@ -14,26 +14,35 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import ballerina/auth;
 import ballerina/test;
 import ballerina/http;
 
 http:Client clientEPUnauthenticated = new("https://localhost:9090/ordermgt");
 
-http:Client clientEPCounter = new("https://localhost:9090/ordermgt", config = {
-    auth: { scheme: http:BASIC_AUTH,
-            config: { username: "counter", password: "ballerina" }
-    }
+auth:OutboundBasicAuthProvider outboundBasicAuthProvider = new({
+    username: "counter",
+    password: "ballerina"
 });
 
-http:Client clientEPAdmin = new("https://localhost:9090/ordermgt", config = {
-    auth: { scheme: http:BASIC_AUTH,
-            config: { username: "admin", password: "ballerina" }
-    }
+http:BasicAuthHandler outboundBasicAuthHandler = new(outboundBasicAuthProvider);
+
+http:Client clientEPCounter = new("https://localhost:9090/ordermgt", {
+        auth: { authHandler: outboundBasicAuthHandler } });
+
+auth:OutboundBasicAuthProvider adminOutboundBasicAuthProvider = new({
+    username: "admin",
+    password: "ballerina"
 });
+
+http:BasicAuthHandler adminOutboundBasicAuthHandler = new(adminOutboundBasicAuthProvider);
+
+http:Client clientEPAdmin = new("https://localhost:9090/ordermgt", {
+        auth: { authHandler: adminOutboundBasicAuthHandler } });
 
 // Unauthenticated invocations
 
-@test:Config
+@test:Config {}
 // Function to test POST resource 'addOrder' with no authentication.
 function testResourceAddOrderUnauthenticated() {
     // Initialize the empty http request.
@@ -45,7 +54,7 @@ function testResourceAddOrderUnauthenticated() {
     var response = clientEPUnauthenticated->post("/order", request);
     if (response is http:Response) {
         // Expected response code is 401.
-        test:assertEquals(response.statusCode, http:UNAUTHORIZED_401,
+        test:assertEquals(response.statusCode, http:STATUS_UNAUTHORIZED,
             msg = "addOrder resource did not respond with expected response code!");
         // Check whether the response is as expected.
         var resPayload = response.getTextPayload();
@@ -74,7 +83,7 @@ function testResourceUpdateOrderUnauthenticated() {
     var response = clientEPUnauthenticated->put("/order/100500", request);
     if (response is http:Response) {
         // Expected response code is 401.
-        test:assertEquals(response.statusCode, http:UNAUTHORIZED_401,
+        test:assertEquals(response.statusCode, http:STATUS_UNAUTHORIZED,
             msg = "updateOrder resource did not respond with expected response code!");
         // Check whether the response is as expected.
         var resPayload = response.getTextPayload();
@@ -99,7 +108,7 @@ function testResourceFindOrderUnauthenticated() {
     var response = clientEPUnauthenticated->get("/order/100500", message = request);
     if (response is http:Response) {
         // Expected response code is 500.
-        test:assertEquals(response.statusCode, http:NOT_FOUND_404,
+        test:assertEquals(response.statusCode, http:STATUS_NOT_FOUND,
             msg = "findOrder resource did not respond with expected response code!");
         // Check whether the response is as expected.
         var resPayload = response.getJsonPayload();
@@ -125,7 +134,7 @@ function testResourceCancelOrderUnauthenticated() {
     var response = clientEPUnauthenticated->delete("/order/100500", request);
     if (response is http:Response) {
         // Expected response code is 401.
-        test:assertEquals(response.statusCode, http:UNAUTHORIZED_401,
+        test:assertEquals(response.statusCode, http:STATUS_UNAUTHORIZED,
             msg = "cancelOrder resource did not respond with expected response code!");
         // Check whether the response is as expected.
         var resPayload = response.getTextPayload();
@@ -142,7 +151,7 @@ function testResourceCancelOrderUnauthenticated() {
 
 // Counter user invocations
 
-@test:Config
+@test:Config {}
 // Function to test POST resource 'addOrder' with counter user.
 function testResourceAddOrderWithCounterUser() {
     // Initialize the empty http request.
@@ -154,7 +163,7 @@ function testResourceAddOrderWithCounterUser() {
     var response = clientEPCounter->post("/order", request);
     if (response is http:Response) {
         // Expected response code is 201.
-        test:assertEquals(response.statusCode, http:CREATED_201,
+        test:assertEquals(response.statusCode, http:STATUS_CREATED,
             msg = "addOrder resource did not respond with expected response code!");
         // Check whether the response is as expected.
         var resPayload = response.getJsonPayload();
@@ -183,7 +192,7 @@ function testResourceUpdateOrderWithCounterUser() {
     var response = clientEPCounter->put("/order/100501", request);
     if (response is http:Response) {
         // Expected response code is 403.
-        test:assertEquals(response.statusCode, http:FORBIDDEN_403,
+        test:assertEquals(response.statusCode, http:STATUS_FORBIDDEN,
             msg = "updateOrder resource did not respond with expected response code!");
         // Check whether the response is as expected.
         var resPayload = response.getTextPayload();
@@ -208,7 +217,7 @@ function testResourceFindOrderWithCounterUser() {
     var response = clientEPCounter->get("/order/100501", message = request);
     if (response is http:Response) {
         // Expected response code is 200.
-        test:assertEquals(response.statusCode, http:OK_200,
+        test:assertEquals(response.statusCode, http:STATUS_OK,
             msg = "findOrder resource did not respond with expected response code!");
         // Check whether the response is as expected.
         var resPayload = response.getJsonPayload();
@@ -235,7 +244,7 @@ function testResourceCancelOrderWithCounterUser() {
     var response = clientEPCounter->delete("/order/100501", request);
     if (response is http:Response) {
         // Expected response code is 403.
-        test:assertEquals(response.statusCode, http:FORBIDDEN_403,
+        test:assertEquals(response.statusCode, http:STATUS_FORBIDDEN,
             msg = "cancelOrder resource did not respond with expected response code!");
         // Check whether the response is as expected.
         var resPayload = response.getTextPayload();
@@ -251,7 +260,7 @@ function testResourceCancelOrderWithCounterUser() {
 
 // Admin user invocations
 
-@test:Config
+@test:Config {}
 // Function to test POST resource 'addOrder' with admin user.
 function testResourceAddOrderWithAdminUser() {
     // Initialize the empty http request.
@@ -263,7 +272,7 @@ function testResourceAddOrderWithAdminUser() {
     var response = clientEPAdmin->post("/order", request);
     if (response is http:Response) {
         // Expected response code is 201.
-        test:assertEquals(response.statusCode, http:CREATED_201,
+        test:assertEquals(response.statusCode, http:STATUS_CREATED,
                             msg = "addOrder resource did not respond with expected response code!");
         // Check whether the response is as expected.
         var resPayload = response.getJsonPayload();
@@ -292,7 +301,7 @@ function testResourceUpdateOrderWithAdminUser() {
     var response = clientEPAdmin->put("/order/100502", request);
     if (response is http:Response) {
         // Expected response code is 200.
-        test:assertEquals(response.statusCode, http:OK_200,
+        test:assertEquals(response.statusCode, http:STATUS_OK,
             msg = "updateOrder resource did not respond with expected response code!");
         // Check whether the response is as expected.
         var resPayload = response.getJsonPayload();
@@ -317,7 +326,7 @@ function testResourceFindOrderWithAdminUser() {
     var response = clientEPAdmin->get("/order/100502");
     if (response is http:Response) {
         // Expected response code is 200.
-        test:assertEquals(response.statusCode, http:OK_200,
+        test:assertEquals(response.statusCode, http:STATUS_OK,
             msg = "findOrder resource did not respond with expected response code!");
         // Check whether the response is as expected.
         var resPayload = response.getJsonPayload();
@@ -344,7 +353,7 @@ function testResourceCancelOrderWithAdminUser() {
     var response = clientEPAdmin->delete("/order/100502", request);
     if (response is http:Response) {
         // Expected response code is 200.
-        test:assertEquals(response.statusCode, http:OK_200,
+        test:assertEquals(response.statusCode, http:STATUS_OK,
             msg = "cancelOrder resource did not respond with expected response code!");
         // Check whether the response is as expected.
         var resPayload = response.getJsonPayload();
