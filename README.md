@@ -125,40 +125,40 @@ project to follow this guide. The root directory is denoted by `SAMPLE_ROOT` in 
 
 ```
 secure-restful-service
-  └── guide
-      └── secure-restful_service
+  └── src
+      └── secure_restful_service
           ├── secure_order_mgt_service.bal
-          └── test
-              └── secure_order_mgt_service_test.bal 
-      └── ballerina.conf
+          └── tests
+              └── secure_order_mgt_service_test.bal
 ```
 
-- Once you created your package structure, go to the <SAMPLE_ROOT>/guide directory and run the following command to initialize your Ballerina project.
+- Open the terminal and create a ballerina project named 'secure-restful-service'.
 
 ```bash
-   $ ballerina init
+   $ ballerina new secure-restful-service
 ```
 
- - The above command initializes the project with a `Ballerina.toml` file and `.ballerina` implementation 
- directory that contains a list of packages in the current directory.
+ - The above command initializes the project with the Ballerina.toml file, src folder, and a tests folder.
  
- - `LdapAuthProviderConfig` record provides the required set of fields for the LDAP integration. Given configurations
+ - Once the project is initialized, a module can be created inside the project using the ballerina create command. 
+ ```bash
+   $ ballerina create secure_restful_service
+ ```
+ 
+ - `LdapConnectionConfig` record provides the required set of fields for the LDAP integration. Given configurations
   are aligned with the provided embedded LDAP server to demonstrate the scenario.
 
-- Add the following content to your Ballerina service, which is the service created in "RESTful Service" Ballerina by Guide, but with authentication and authorization related annotation attributes added to the service and resource configuration. `authentication` is enabled in `authConfig` attribute of `ServiceConfig`. Therefore, authentication will be enforced on all the resources of the service. However, since we have overridden the `authentication` enabled status to 'false' for `findOrder` functionality, authentication will not be enforced for `findOrder`.
+- Add the following content to your Ballerina service, which is the service created in "RESTful Service" Ballerina by Guide, but with authentication and authorization related annotation attributes added to the service and resource configuration. `authentication` is enabled in `auth` attribute of `ServiceConfig`. Therefore, authentication will be enforced on all the resources of the service. However, since we have overridden the `authentication` enabled status to 'false' for `findOrder` functionality, authentication will not be enforced for `findOrder`.
 
 ##### secure_order_mgt_service.bal
 ```ballerina
-import ballerina/auth;
 import ballerina/http;
+import ballerina/ldap;
 import ballerina/log;
-
-final string regexInt = "\\d+";
-final string regexJson = "[a-zA-Z0-9.,{}:\" ]*";
 
 // Configuration options to integrate Ballerina service
 // with an LDAP server.
-auth:LdapAuthProviderConfig ldapAuthProviderConfig = {
+ldap:LdapConnectionConfig ldapConnectionConfig = {
     // Unique name to identify the user store.
     domainName: "ballerina.io",
     // Connection URL to the LDAP server.
@@ -199,19 +199,16 @@ auth:LdapAuthProviderConfig ldapAuthProviderConfig = {
     // Timeout in making the initial LDAP connection.
     ldapConnectionTimeout: 5000,
     // Read timeout for LDAP operations in milliseconds.
-    readTimeout: 60000,
+    readTimeoutInMillis: 60000,
     // Retry the authentication request if a timeout happened.
     retryAttempts: 3
 };
 
-http:AuthProvider basicAuthProvider = {
-    id: "basic01",
-    scheme: http:BASIC_AUTH,
-    authStoreProvider: http:LDAP_AUTH_STORE,
-    config: ldapAuthProviderConfig
-};
+ldap:InboundLdapAuthProvider ldapAuthProvider = new(ldapConnectionConfig, "ldap01");
+http:BasicAuthHandler basicAuthHandler = new(ldapAuthProvider);
 
-listener http:Listener httpListener = new(9090, config = {
+listener http:Listener httpListener = new(9090, {
+    auth: { authHandlers: [basicAuthHandler] },
     secureSocket: {
         keyStore: {
             path: "${ballerina.home}/bre/security/ballerinaKeystore.p12",
@@ -221,19 +218,18 @@ listener http:Listener httpListener = new(9090, config = {
             path: "${ballerina.home}/bre/security/ballerinaTruststore.p12",
             password: "ballerina"
         }
-    },
-    authProviders: [basicAuthProvider]
+    }
 });
 
 // Order management is done using an in memory map.
 // Add some sample orders to 'orderMap' at startup.
-map<json> ordersMap = {};
+map<map<json>> ordersMap = {};
 
 // RESTful service.
 @http:ServiceConfig {
     basePath: "/ordermgt",
-    authConfig: {
-        authentication: { enabled: true }
+    auth: {
+        enabled: true
     }
 }
 service order_mgt on httpListener {
@@ -243,27 +239,27 @@ service order_mgt on httpListener {
     @http:ResourceConfig {
         methods: ["POST"],
         path: "/order",
-        authConfig: {
+        auth: {
             scopes: ["add_order"]
         }
     }
     resource function addOrder(http:Caller caller, http:Request req) {
         var orderReq = req.getJsonPayload();
-        if (orderReq is json) {
+        if (orderReq is map<json>) {
             string orderId = orderReq.Order.ID.toString();
 
-            // Get untainted value if `orderId` is a valid input.
-            orderId = getUntaintedStringIfValid(orderId);
+            // Get untainted value if `orderId` is a valid input
+            orderId = <@untainted> orderId;
 
             ordersMap[orderId] = orderReq;
 
             // Create response message.
             json payload = { status: "Order Created.", orderId: orderId };
             http:Response response = new;
-            response.setPayload(untaint payload);
+            response.setPayload(<@untainted> payload);
 
             // Set 201 Created status code in the response message.
-            response.statusCode = http:CREATED_201;
+            response.statusCode = http:STATUS_ACCEPTED;
             // Set 'Location' header in the response message.
             // This can be used by the client to locate the newly added order.
             response.setHeader("Location", "http://localhost:9090/ordermgt/order/" + orderId);
@@ -286,37 +282,44 @@ service order_mgt on httpListener {
     @http:ResourceConfig {
         methods: ["PUT"],
         path: "/order/{orderId}",
-        authConfig: {
+        auth: {
             scopes: ["update_order"]
         }
     }
     resource function updateOrder(http:Caller caller, http:Request req, string orderId) {
         var updatedOrder = req.getJsonPayload();
+        http:Response response = new;
 
         if (updatedOrder is json) {
-            // Get untainted value if `orderId` is a valid input.
-            string validOrderId = getUntaintedStringIfValid(orderId);
+            // Get untainted value if `orderId` is a valid input
+            string validOrderId = <@untainted> orderId;
 
             // Find the order that needs to be updated and retrieve it in JSON format.
-            json existingOrder = ordersMap[validOrderId];
-
-            // Get untainted JSON value if it is a valid JSON.
-            existingOrder = getUntaintedJsonIfValid(existingOrder);
-            updatedOrder = getUntaintedJsonIfValid(updatedOrder);
-
-            // Update existing order with the attributes of the updated order.
-            if (existingOrder != null) {
-
-                existingOrder.Order.Name = updatedOrder.Order.Name;
-                existingOrder.Order.Description = updatedOrder.Order.Description;
-                ordersMap[validOrderId] = existingOrder;
-            } else {
-                existingOrder = "Order : " + validOrderId + " cannot be found.";
+            var existingOrder = ordersMap[validOrderId];
+            if (existingOrder is map<map<json>>) {                
+                existingOrder = <@untainted> existingOrder;
             }
 
-            http:Response response = new;
-            // Set the JSON payload to the outgoing response message to the client.
-            response.setPayload(existingOrder);
+            // Get untainted json value if it is a valid json
+            updatedOrder = <@untainted> updatedOrder;
+
+            // Updating existing order with the attributes of the updated order.
+            if (existingOrder is map<map<json>>) {
+                var name = updatedOrder.Order.Name;
+                if (name is json) {
+                    existingOrder["Order"]["Name"] = name;
+                } 
+                var description = updatedOrder.Order.Description;
+                if (description is json) {
+                   existingOrder["Order"]["Description"] =  description;
+                }
+                ordersMap[validOrderId] = existingOrder;
+                // Set the JSON payload to the outgoing response message to the client.
+                response.setPayload(existingOrder);
+            } else {
+                response.setPayload("Order : " + validOrderId + " cannot be found.");
+            }
+
             // Send response to the caller.
             var responseToCaller = caller->respond(response);
             if (responseToCaller is error) {
@@ -335,19 +338,19 @@ service order_mgt on httpListener {
     @http:ResourceConfig {
         methods: ["DELETE"],
         path: "/order/{orderId}",
-        authConfig: {
+        auth: {
             scopes: ["cancel_order"]
         }
     }
     resource function cancelOrder(http:Caller caller, http:Request req, string orderId) {
-        // Get untainted string value if `orderId` is a valid input.
-        string validOrderId = getUntaintedStringIfValid(orderId);
+        // Get untainted string value if `orderId` is a valid input
+        string validOrderId = <@untainted> orderId;
 
         // Remove the requested order from the map.
-        boolean isRemoved = ordersMap.remove(validOrderId);
+        var ordersMapAfterRemoving = ordersMap.remove(validOrderId);
         http:Response response = new;
         json payload = {};
-        if (isRemoved) {
+        if (!ordersMap.hasKey(validOrderId)) {
             payload = { status: "Order : " + validOrderId + " removed." };
         } else {
             payload = { status: "Failed to remove the order : " + validOrderId };
@@ -364,17 +367,17 @@ service order_mgt on httpListener {
     }
 
     // Resource that handles the HTTP GET requests that are directed
-    // to a specific order using path '/orders/<orderID>'.
+    // to a specific order using path '/orders/<orderID>'
     @http:ResourceConfig {
         methods: ["GET"],
         path: "/order/{orderId}",
-        authConfig: {
-            authentication: { enabled: false }
+        auth: {
+            enabled: false
         }
     }
     resource function findOrder(http:Caller caller, http:Request req, string orderId) {
-        // Get untainted string value if `orderId` is a valid input.
-        string validOrderId = getUntaintedStringIfValid(orderId);
+        // Get untainted string value if `orderId` is a valid input
+        string validOrderId = <@untainted> orderId;
 
         // Find the requested order from the map and retrieve it in JSON format.
         http:Response response = new;
@@ -382,7 +385,7 @@ service order_mgt on httpListener {
         if (ordersMap.hasKey(validOrderId)) {
             payload = ordersMap[validOrderId];
         } else {
-            response.statusCode = http:NOT_FOUND_404;
+            response.statusCode = http:STATUS_NOT_FOUND;
             payload = { status: "Order : " + validOrderId + " cannot be found." };
         }
 
@@ -397,36 +400,8 @@ service order_mgt on httpListener {
     }
 }
 
-function getUntaintedStringIfValid(string input) returns @untainted string {
-    boolean|error isValid = input.matches(regexInt);
-    if (isValid is error) {
-        panic isValid;
-    } else {
-        if (isValid) {
-            return input;
-        } else {
-            error err = error("Validation error: Input '" + input + "' should be valid.");
-            panic err;
-        }
-    }
-}
-
-function getUntaintedJsonIfValid(json input) returns @untainted json {
-    string inputStr = input.toString();
-    boolean|error isValid = inputStr.matches(regexJson);
-    if (isValid is error) {
-        panic isValid;
-    } else {
-        if (isValid) {
-            return input;
-        } else {
-            error err = error("Validation error: Input payload '" + inputStr + "' should be valid.");
-            panic err;
-        }
-    }
-}
 ```
-- Ballerina uses `scope` as the way of expressing authorization. Multiple scopes can be assigned to a user, and scopes can then be validated while enforcing authorization. In order to express that certain service or resources require a scope, we have used the `scopes` annotation attribute. According to the `authConfig` of the service, in order to invoke `addOrder` function, the user should have 'add_order' scope, whereas to invoke `updateOrder` and `cancelOrder` user should have 'update_order' and 'cancel_order' scopes respectively.
+- Ballerina uses `scope` as the way of expressing authorization. Multiple scopes can be assigned to a user, and scopes can then be validated while enforcing authorization. In order to express that certain service or resources require a scope, we have used the `scopes` annotation attribute. According to the `auth` of the service, in order to invoke `addOrder` function, the user should have 'add_order' scope, whereas to invoke `updateOrder` and `cancelOrder` user should have 'update_order' and 'cancel_order' scopes respectively.
 
 ## Testing
 
@@ -434,25 +409,24 @@ function getUntaintedJsonIfValid(json input) returns @untainted json {
 
 You can run the RESTful service that you developed above in your local environment. You need to have the Ballerina installation in your local machine and simply point to the <ballerina>/bin/ballerina binary to execute all the following steps.  
 
-1. As the first step you can build a Ballerina executable archive (.balx) of the service that we developed above, 
-using the following command. It points to the directory in which the service we developed above located and it will create an executable binary out of that. Navigate to the `<SAMPLE_ROOT>/guide/` folder and run the following command.
+1. As the first step you can build a Ballerina executable JAR of the service that we developed above, 
+using the following command. It points to the directory in which the service we developed above located and it will create an executable binary out of that. Navigate to the `secure-restful-service/` folder and run the following command.
 
 ```bash
 $ ballerina build secure_restful_service
 ```
 
-2. Once the secure_order_mgt_service.balx is created inside the target folder, you can run that with the following command.
+2. Once the secure_order_mgt_service_executable.jar is created inside the target folder, you can run that with the following command.
 
 ```bash
-$ ballerina run target/secure_restful_service.balx
+$ ballerina run target/bin/secure_restful_service-executable.jar
 ```
 
 3. The successful execution of the service should show us the following output.
 
 ```bash
-$ ballerina run target/secure_restful_service.balx
+$ ballerina run target/bin/secure-restful-service-executable.jar
 
-ballerina: initiating service(s) in 'target/secure_restful_service.balx'
 ballerina: started HTTP/WS endpoint 0.0.0.0:9090
 ```
 
@@ -553,7 +527,7 @@ This guide contains unit test cases for each resource available in the 'order_mg
 
 >Note: Make sure that embedded LDAP server is up and running prior to running the unit tests.
 
-To run the unit tests, navigate to the `<SAMPLE_ROOT>/guide/` directory and run the following command.
+To run the unit tests, navigate to the `secure-restful-service` directory and run the following command.
 ```bash
    $ ballerina test
 ```
@@ -565,10 +539,10 @@ To check the implementation of the test file, refer to the [secure_order_mgt_ser
 Once you are done with the development, you can deploy the service using any of the methods that we listed below.
 
 ### Deploying locally
-You can deploy the RESTful service that you developed above, in your local environment. You can use the Ballerina executable archive (.balx) that we created above and run it in your local environment as follows.
+You can deploy the RESTful service that you developed above, in your local environment. You can use the Ballerina executable archive (.jar) that we created above and run it in your local environment as follows.
 
 ```
-$ ballerina run target/secure_restful_service.balx
+$ ballerina run target/bin/secure_restful_service_executable.jar
 ```
 
 ### Deploying on Docker
@@ -602,7 +576,7 @@ import ballerinax/docker;
 
 // Configuration options to integrate Ballerina service
 // with an LDAP server.
-auth:LdapAuthProviderConfig ldapAuthProviderConfig = {
+ldap:LdapConnectionConfig ldapConnectionConfig = {
     // Unique name to identify the user store.
     domainName: "ballerina.io",
     // Connection URL to the LDAP server.
@@ -642,19 +616,14 @@ auth:LdapAuthProviderConfig ldapAuthProviderConfig = {
     connectionPoolingEnabled: false,
     // Timeout in making the initial LDAP connection.
     ldapConnectionTimeout: 5000,
-    // The value of this property is the read timeout in
-    // milliseconds for LDAP operations.
-    readTimeout: 60000,
+    // Read timeout for LDAP operations in milliseconds.
+    readTimeoutInMillis: 60000,
     // Retry the authentication request if a timeout happened.
     retryAttempts: 3
 };
 
-http:AuthProvider basicAuthProvider = {
-    id: "basic01",
-    scheme: http:AUTHN_SCHEME_BASIC,
-    authStoreProvider: http:AUTH_PROVIDER_LDAP,
-    authStoreProviderConfig: ldapAuthProviderConfig
-};
+ldap:InboundLdapAuthProvider ldapAuthProvider = new(ldapConnectionConfig, "ldap01");
+http:BasicAuthHandler basicAuthHandler = new(ldapAuthProvider);
 
 @docker:Config {
     registry:"ballerina.guides.io",
@@ -673,7 +642,7 @@ listener http:Listener httpListener = new(9090, config = {
             password: "ballerina"
         }
     },
-    authProviders: [basicAuthProvider]
+    auth: { authHandlers: [basicAuthHandler] }
 });
 
 // Order management is done using an in memory map.
@@ -690,9 +659,9 @@ map<json> ordersMap = {};
 service order_mgt on httpListener {
 ```
 
-- Now you can build a Ballerina executable archive (.balx) of the service that we developed above, using the following command. It points to the service file that we developed above and it will create an executable binary out of that.
+- Now you can build a Ballerina executable archive (.jar) of the service that we developed above, using the following command. It points to the service file that we developed above and it will create an executable binary out of that.
 This will also create the corresponding Docker image using the Docker annotations that you have configured above.
-Navigate to the `<SAMPLE_ROOT>/src/` folder and run the following command.
+Navigate to the `<SAMPLE_ROOT>/` folder and run the following command.
 
 ```
    $ ballerina build secure_restful_service --skiptests
@@ -741,7 +710,7 @@ import ballerinax/kubernetes;
 
 // Configuration options to integrate Ballerina service
 // with an LDAP server.
-auth:LdapAuthProviderConfig ldapAuthProviderConfig = {
+ldap:LdapConnectionConfig ldapConnectionConfig = {
     // Unique name to identify the user store.
     domainName: "ballerina.io",
     // Connection URL to the LDAP server.
@@ -781,19 +750,14 @@ auth:LdapAuthProviderConfig ldapAuthProviderConfig = {
     connectionPoolingEnabled: false,
     // Timeout in making the initial LDAP connection.
     ldapConnectionTimeout: 5000,
-    // The value of this property is the read timeout in
-    // milliseconds for LDAP operations.
-    readTimeout: 60000,
+    // Read timeout for LDAP operations in milliseconds.
+    readTimeoutInMillis: 60000,
     // Retry the authentication request if a timeout happened.
     retryAttempts: 3
 };
 
-http:AuthProvider basicAuthProvider = {
-    id: "basic01",
-    scheme: http:AUTHN_SCHEME_BASIC,
-    authStoreProvider: http:AUTH_PROVIDER_LDAP,
-    authStoreProviderConfig: ldapAuthProviderConfig
-};
+ldap:InboundLdapAuthProvider ldapAuthProvider = new(ldapConnectionConfig, "ldap01");
+http:BasicAuthHandler basicAuthHandler = new(ldapAuthProvider);
 
 @kubernetes:Ingress {
     hostname:"ballerina.guides.io",
@@ -822,7 +786,7 @@ listener http:Listener httpListener = new(9090, config = {
             password: "ballerina"
         }
     },
-    authProviders: [basicAuthProvider]
+    auth: { authHandlers: [basicAuthHandler] }
 });
 
 // Order management is done using an in memory map.
@@ -847,7 +811,7 @@ If you are using Minikube, you need to set a couple of additional attributes to 
 - `dockerCertPath` - The path to the certificates directory of Minikube (e.g., `/home/ballerina/.minikube/certs`).
 - `dockerHost` - The host for the running cluster (e.g., `tcp://192.168.99.100:2376`). The IP address of the cluster can be found by running the `minikube ip` command.
 
-- Now you can build a Ballerina executable archive (.balx) of the service that we developed above by using the following command. It points to the service file that we developed above and it creates an executable binary out of that.
+- Now you can build a Ballerina executable archive (.jar) of the service that we developed above by using the following command. It points to the service file that we developed above and it creates an executable binary out of that.
 This also creates the corresponding Docker image and the Kubernetes artifacts using the Kubernetes annotations that you have configured above.
 
 ```
